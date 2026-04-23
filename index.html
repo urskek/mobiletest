@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Craig Ashby</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+<style>
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url('ubuntu-mono_5/webfonts/ubuntu-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url('ubuntu-mono_5/webfonts/ubuntu-mono-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #151829;
+  color: #aaa;
+  font-family: 'Ubuntu Mono', monospace;
+  overflow: hidden;
+}
+
+/* ── interaction layer — z-10, full viewport, handles animation controls ── */
+#interaction-layer {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 10;
+  pointer-events: none;
+  cursor: default;
+}
+#interaction-layer.active {
+  pointer-events: all;
+  cursor: grab;
+}
+#interaction-layer.dragging {
+  cursor: grabbing;
+}
+
+/* ── animation canvas — z-0, fixed, full viewport ── */
+#animation-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── layout overlay — z-1, fixed, full viewport ── */
+#layout {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* stream mask — covers stream column below header */
+#mask-content {
+  position: absolute;
+  top: 72px; left: 0; right: 172px; bottom: 0;
+  background: #151829;
+}
+
+/* ── header — z-100, fixed, transparent ── */
+.site-header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 72px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  background: transparent;
+  border-bottom: 1px solid #292f51;
+  overflow: hidden;
+  pointer-events: all;
+}
+
+.header-logo {
+  position: relative;
+  z-index: 1;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.header-mob-trigger {
+  position: relative;
+  z-index: 1;
+}
+
+.site-header svg text { font-family: 'Ubuntu Mono', monospace; }
+
+/* ── stream — fixed, scrolls independently ── */
+.stream {
+  position: fixed;
+  top: 72px; left: 0;
+  right: 172px; bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  z-index: 2;
+  padding: 0 28px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;  /* so it can capture clicks, but we ignore them for animation */
+}
+.stream::-webkit-scrollbar { display: none; }
+
+/* stream texture */
+.stream-bg {
+  position: fixed;
+  top: 72px; left: 0;
+  width: calc(100% - 172px);
+  height: 100vh;
+  background-image: url('New-Dither3.png');
+  background-size: auto;
+  background-position: top left;
+  background-repeat: repeat-x;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 80%);
+  mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 80%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.stream-content {
+  width: 100%;
+  max-width: 780px;
+  padding-top: 48px;
+  position: relative;
+  z-index: 4;
+}
+
+.post { margin-bottom: 72px; padding-bottom: 72px; border-bottom: 1px solid #292f51; }
+.post:last-child { border-bottom: none; margin-bottom: 0; }
+.post-img { width: 100%; margin-bottom: 16px; }
+.post-img img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(100vh - 160px);
+  object-fit: contain;
+  object-position: left;
+}
+.post-meta { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.post-title { font-size: 22px; color: #e4e5ea; letter-spacing: 0.04em; }
+.post-link { color: #e4e5ea; text-decoration: none; }
+.post-link:hover { color: #8d4d91; }
+.post-date { font-size: 18px; color: #6b708a; }
+.thread-tag { font-size: 18px; color: #8d4d91; letter-spacing: 0.08em; text-transform: lowercase; padding: 2px 6px; cursor: pointer; border: 1px solid transparent; }
+.post-tag { font-size: 16px; color: #6b708a; letter-spacing: 0.08em; text-transform: lowercase; }
+.post-category { font-size: 16px; color: #6b708a; letter-spacing: 0.08em; text-transform: lowercase; }
+
+/* ── sidebar — fixed, right edge, transparent bg ── */
+.sidebar {
+  position: fixed;
+  top: 72px; right: 0;
+  width: 172px; bottom: 0;
+  z-index: 2;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-left: 1px solid #292f51;
+  pointer-events: auto;
+}
+.sidebar::-webkit-scrollbar { display: none; }
+
+.sb-inner {
+  width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: relative;
+  z-index: 1;
+}
+
+.sb-label { font-size: 18px; color: #6b708a; letter-spacing: 0.14em; text-transform: lowercase; margin-bottom: 10px; }
+.sq-grid { display: grid; grid-template-columns: repeat(3, 22px); gap: 4px; }
+.sq { width: 22px; height: 22px; cursor: pointer; transition: background 0.12s; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #e4e5ea; line-height: 1; }
+.sb-strip { height: 16px; display: flex; align-items: center; margin: 3px 0 16px; position: relative; overflow: visible; }
+.sb-strip span { font-size: 16px; color: #6b708a; letter-spacing: 0.04em; opacity: 0; transition: opacity 0.15s; white-space: nowrap; position: absolute; left: 0; }
+.sb-strip span.on { opacity: 1; }
+.sb-div { border: none; border-top: 1px solid #292f51; margin: 0 0 16px; width: 88px; }
+.yr-label { font-size: 16px; color: #6b708a; letter-spacing: 0.06em; margin-bottom: 4px; }
+.arch-block { margin-bottom: 2px; }
+
+/* ── mobile ── */
+@media (max-width: 900px) {
+  .site-header {
+    padding: 0 16px;
+    justify-content: space-between;
+  }
+  .site-header svg {
+    width: auto; height: auto; max-width: 320px;
+  }
+  .sidebar { display: none; }
+  #mask-content { right: 0; transition: right 0.25s ease; }
+  #mask-content.panel-open { right: 140px; }
+  .stream { right: 0; transition: right 0.25s ease; }
+  .stream.panel-open { right: 140px; }
+  .stream-bg { width: 100%; transition: width 0.25s ease; }
+  .stream-bg.panel-open { width: calc(100% - 140px); }
+
+  .mob-trigger {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .mob-sq {
+    width: 32px; height: 32px;
+    background: #8d4d91;
+    border: 1px solid #8d4d91;
+    cursor: pointer;
+    pointer-events: all;
+    transition: background 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+  .mob-sq:hover, .mob-sq.open {
+    background: none;
+    border-color: #8d4d91;
+  }
+  .mob-panel {
+    position: fixed;
+    top: 72px; right: 0; bottom: 0;
+    width: 140px;
+    background: transparent;
+    border-left: 1px solid #292f51;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 200;
+    overflow-y: auto;
+    scrollbar-width: none;
+    padding: 24px 16px;
+  }
+  .mob-panel::-webkit-scrollbar { display: none; }
+  .mob-panel.open { transform: translateX(0); }
+  .mob-panel .sb-inner { width: 100%; }
+  .mob-panel .sq-grid { grid-template-columns: repeat(3, 32px); gap: 6px; }
+  .mob-panel .sq { width: 32px; height: 32px; font-size: 16px; }
+  .mob-panel .sb-strip span { font-size: 14px; white-space: nowrap; }
+}
+
+@media (min-width: 901px) {
+  .mob-trigger, .mob-panel { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- z-0: animation canvas -->
+<div id="animation-canvas"></div>
+
+<!-- z-10: interaction layer — full viewport, handles freeze/drag, passes clicks through when not active -->
+<div id="interaction-layer"></div>
+
+<!-- z-1: layout mask — covers stream column below header only -->
+<div id="layout">
+  <div id="mask-content"></div>
+</div>
+
+<!-- z-100: header — transparent, animation shows through -->
+<header class="site-header">
+  <div class="header-logo">
+    <a href="index.html" style="display:block;line-height:0;">
+      <img src="Logo1.png" alt="craig ashby" style="max-height:60px;width:auto;display:block;">
+    </a>
+  </div>
+  <div class="header-mob-trigger">
+    <div class="mob-trigger">
+      <div class="mob-sq" id="mob-sq" aria-label="open navigation"></div>
+    </div>
+  </div>
+</header>
+
+<!-- z-2: stream — fixed, scrolls independently inside its container -->
+<div class="stream">
+  <div class="stream-bg"></div>
+  <div class="stream-content">
+
+    <div class="post" id="sktchbk046">
+      <div class="post-img">
+        <img src="SKTCHBK046-scaled.jpg" alt="sktchbk046" class="post-img-trigger" data-src="SKTCHBK046-scaled.jpg" data-title="sktchbk046">
+      </div>
+      <div class="post-meta">
+        <span class="post-title"><a href="post.html" class="post-link">sktchbk046</a></span>
+        <span class="post-date">april 1, 2026</span>
+        <span class="thread-tag">→ sketchbook</span>
+        <span class="post-category">art</span>
+        <span class="post-tag">collage</span>
+      </div>
+    </div>
+
+    <div class="post" id="31-oprah1">
+      <div class="post-img">
+        <img src="31-Oprah1.jpg" alt="31-oprah1" class="post-img-trigger" data-src="31-Oprah1.jpg" data-title="31-oprah1">
+      </div>
+      <div class="post-meta">
+        <span class="post-title"><a href="post.html" class="post-link">31-oprah1</a></span>
+        <span class="post-date">august 2, 2012</span>
+        <span class="thread-tag">→ pr-raw</span>
+        <span class="post-category">art</span>
+        <span class="post-tag">mixed media</span>
+      </div>
+    </div>
+
+    <div class="post" id="prdcht">
+      <div class="post-img">
+        <img src="PRDCHT300DPI-scaled.jpg" alt="prdcht" class="post-img-trigger" data-src="PRDCHT300DPI-scaled.jpg" data-title="prdcht">
+      </div>
+      <div class="post-meta">
+        <span class="post-title"><a href="post.html" class="post-link">prdcht</a></span>
+        <span class="post-date">september 1, 2024</span>
+        <span class="thread-tag">→ aperiodic tiles</span>
+        <span class="post-category">art</span>
+        <span class="post-tag">collage</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- z-2: sidebar — fixed, transparent, animation shows through -->
+<div class="sidebar">
+  <div class="sb-inner">
+
+    <div class="sb-label">search</div>
+    <div class="search-wrap" id="search-wrap">
+      <div class="search-sq" id="search-sq"></div>
+      <input class="search-input" id="search-input" type="text" placeholder="search…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="sb-strip"><span id="search-strip"></span></div>
+    <div class="search-results" id="search-results"></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">archive</div>
+    <div id="arch-content"></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">series</div>
+    <div class="sq-grid" id="series-grid"></div>
+    <div class="sb-strip"><span id="series-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">categories</div>
+    <div class="sq-grid" id="cat-grid"></div>
+    <div class="sb-strip"><span id="cat-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">tags</div>
+    <div class="sq-grid" id="tag-grid"></div>
+    <div class="sb-strip"><span id="tag-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">contact</div>
+    <div class="sq-grid" id="contact-grid"></div>
+    <div class="sb-strip"><span id="contact-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">about</div>
+    <div class="sq-grid" id="about-grid"></div>
+    <div class="sb-strip"><span id="about-strip"></span></div>
+
+  </div>
+</div>
+
+<!-- mobile panel -->
+<div class="mob-panel" id="mob-panel">
+  <div class="sb-inner">
+    <div class="sb-label">search</div>
+    <div class="search-wrap" id="mob-search-wrap">
+      <div class="search-sq" id="mob-search-sq"></div>
+      <input class="search-input" id="mob-search-input" type="text" placeholder="search…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="sb-strip"><span id="mob-search-strip"></span></div>
+    <div class="search-results" id="mob-search-results"></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">archive</div>
+    <div id="mob-arch-content"></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">series</div>
+    <div class="sq-grid" id="mob-series-grid"></div>
+    <div class="sb-strip"><span id="mob-series-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">categories</div>
+    <div class="sq-grid" id="mob-cat-grid"></div>
+    <div class="sb-strip"><span id="mob-cat-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">tags</div>
+    <div class="sq-grid" id="mob-tag-grid"></div>
+    <div class="sb-strip"><span id="mob-tag-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">contact</div>
+    <div class="sq-grid" id="mob-contact-grid"></div>
+    <div class="sb-strip"><span id="mob-contact-strip"></span></div>
+
+    <div class="sb-div"></div>
+    <div class="sb-label">about</div>
+    <div class="sq-grid" id="mob-about-grid"></div>
+    <div class="sb-strip"><span id="mob-about-strip"></span></div>
+  </div>
+</div>
+
+<script>
+const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const density = {
+  2026:[3,2,1,0,0,0,0,0,0,0,0,0],2025:[4,3,5,2,4,3,5,4,3,2,4,3],
+  2024:[3,4,2,5,3,4,2,3,5,4,3,2],2023:[5,3,4,2,3,5,4,3,2,4,3,5],
+  2022:[2,4,3,5,2,3,4,5,3,2,4,3],2021:[4,2,5,3,4,2,3,4,5,3,2,4],
+  2020:[3,5,2,4,3,5,2,3,4,5,3,2],2019:[5,3,4,2,5,3,4,2,3,4,5,3],
+  2018:[2,4,5,3,2,4,5,3,2,4,5,3],2017:[4,3,2,5,4,3,2,5,4,3,2,5],
+  2016:[3,5,4,2,3,5,4,2,3,5,4,2],2015:[5,2,3,4,5,2,3,4,5,2,3,4],
+  2014:[2,4,5,3,2,4,5,3,2,4,5,3],2013:[4,3,2,5,4,3,2,5,4,3,2,5],
+  2012:[0,0,0,0,0,0,0,3,4,2,3,4]
+};
+
+const archContent = document.getElementById('arch-content');
+Object.keys(density).sort((a,b) => b-a).forEach(y => {
+  const d = density[y];
+  const block = document.createElement('div');
+  block.className = 'arch-block';
+  const yl = document.createElement('div');
+  yl.className = 'yr-label';
+  yl.textContent = y;
+  block.appendChild(yl);
+  const grid = document.createElement('div');
+  grid.className = 'sq-grid';
+  const strip = document.createElement('div');
+  strip.className = 'sb-strip';
+  const ss = document.createElement('span');
+  strip.appendChild(ss);
+  d.forEach((count, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'sq';
+    const setC = h => {
+      if (!count) { cell.style.background = '#292f51'; cell.style.border = 'none'; return; }
+      if (h) { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; return; }
+      const t = count/5;
+      cell.style.border = 'none';
+      cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`;
+    };
+    setC(false);
+    cell.dataset.count = count;
+    cell.addEventListener('mouseenter', () => { setC(true); if (count) { cell.textContent = Math.floor(Math.random()*99)+1; } ss.textContent = MONTHS[i]+' '+y; ss.classList.add('on'); });
+    cell.addEventListener('mouseleave', () => { setC(false); cell.textContent = ''; ss.classList.remove('on'); });
+    grid.appendChild(cell);
+  });
+  block.appendChild(grid);
+  block.appendChild(strip);
+  archContent.appendChild(block);
+});
+
+const SERIES = ['red series','fragment 7','audio studies','found footage','body of work','language games','analog process','night work'];
+const sg = document.getElementById('series-grid');
+document.getElementById('series-strip').innerHTML = '<span></span>';
+const ss2el = document.getElementById('series-strip').querySelector('span');
+SERIES.forEach((s, i) => {
+  const cell = document.createElement('div');
+  cell.className = 'sq';
+  const t = (i+1)/SERIES.length;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('mouseenter', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; ss2el.textContent=s.toLowerCase(); ss2el.classList.add('on'); });
+  cell.addEventListener('mouseleave', () => { base(); ss2el.classList.remove('on'); });
+  sg.appendChild(cell);
+});
+
+const CATEGORIES = ['art','photography','audio','video'];
+const cg = document.getElementById('cat-grid');
+const csEl = document.getElementById('cat-strip');
+CATEGORIES.forEach((cat, i) => {
+  const cell = document.createElement('div');
+  cell.className = 'sq';
+  const t = (i+1)/CATEGORIES.length;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('mouseenter', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; csEl.textContent=cat; csEl.classList.add('on'); });
+  cell.addEventListener('mouseleave', () => { base(); csEl.classList.remove('on'); });
+  cg.appendChild(cell);
+});
+
+const TAGS = [
+  {label:'acrylic',count:2},{label:'collage',count:5},{label:'collagraph',count:2},
+  {label:'copy art',count:3},{label:'digital',count:7},{label:'dj mix',count:2},
+  {label:'drawing',count:3},{label:'film',count:2},
+  {label:'mixed media',count:5},{label:'pen and ink',count:3},{label:'pencil',count:2},
+  {label:'polaroid',count:2},{label:'self-portrait',count:4},{label:'serigraph',count:2},
+  {label:'song',count:3},{label:'watercolor',count:2}
+];
+const maxT = Math.max(...TAGS.map(t => t.count));
+const tg = document.getElementById('tag-grid');
+const tsEl = document.getElementById('tag-strip');
+TAGS.forEach(tag => {
+  const cell = document.createElement('div');
+  cell.className = 'sq';
+  const t = tag.count/maxT;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('mouseenter', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; tsEl.textContent=tag.label.toLowerCase(); tsEl.classList.add('on'); });
+  cell.addEventListener('mouseleave', () => { base(); tsEl.classList.remove('on'); });
+  tg.appendChild(cell);
+});
+
+const searchWrap = document.getElementById('search-wrap');
+const searchSq = document.getElementById('search-sq');
+const searchStripSpan = document.getElementById('search-strip');
+
+searchSq.addEventListener('mouseenter', () => {
+  if (!searchWrap.classList.contains('open')) {
+    searchStripSpan.textContent = 'search';
+    searchStripSpan.classList.add('on');
+  }
+});
+searchSq.addEventListener('mouseleave', () => {
+  if (!searchWrap.classList.contains('open')) {
+    searchStripSpan.classList.remove('on');
+  }
+});
+searchSq.addEventListener('click', () => openSearch());
+
+function openSearch() {
+  searchWrap.classList.add('open');
+  searchStripSpan.classList.remove('on');
+  setTimeout(() => document.getElementById('search-input').focus(), 220);
+}
+function closeSearch() {
+  searchWrap.classList.remove('open');
+  searchSq.style.background = '#292f51';
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').innerHTML = '';
+}
+
+const contactGrid = document.getElementById('contact-grid');
+const contactStripEl = document.getElementById('contact-strip').querySelector('span') || (() => { const s = document.createElement('span'); document.getElementById('contact-strip').appendChild(s); return s; })();
+const contactCell = document.createElement('div');
+contactCell.className = 'sq';
+contactCell.style.cssText = 'background:#292f51;border:1px solid #292f51;cursor:pointer;';
+contactCell.addEventListener('mouseenter', () => { contactCell.style.background = 'none'; contactCell.style.border = '1px solid #8d4d91'; contactStripEl.textContent = 'contact'; contactStripEl.classList.add('on'); });
+contactCell.addEventListener('mouseleave', () => { contactCell.style.background = '#292f51'; contactCell.style.border = '1px solid #292f51'; contactStripEl.classList.remove('on'); });
+contactCell.addEventListener('click', () => { window.location.href = 'mailto:craig@craigashby.net'; });
+contactGrid.appendChild(contactCell);
+
+const aboutStripEl = document.getElementById('about-strip').querySelector('span') || (() => { const s = document.createElement('span'); document.getElementById('about-strip').appendChild(s); return s; })();
+const ag = document.getElementById('about-grid');
+const aboutCell = document.createElement('div');
+aboutCell.className = 'sq';
+aboutCell.style.cssText = 'background:#292f51;border:1px solid #292f51;cursor:pointer;';
+aboutCell.addEventListener('mouseenter', () => { aboutCell.style.background = 'none'; aboutCell.style.border = '1px solid #8d4d91'; aboutStripEl.textContent = 'about'; aboutStripEl.classList.add('on'); });
+aboutCell.addEventListener('mouseleave', () => { aboutCell.style.background = '#292f51'; aboutCell.style.border = '1px solid #292f51'; aboutStripEl.classList.remove('on'); });
+aboutCell.addEventListener('click', () => { document.getElementById('about-overlay').classList.add('open'); });
+ag.appendChild(aboutCell);
+
+const mobSq = document.getElementById('mob-sq');
+const mobPanel = document.getElementById('mob-panel');
+const maskContent = document.getElementById('mask-content');
+const streamBg = document.querySelector('.stream-bg');
+const streamEl = document.querySelector('.stream');
+mobSq.addEventListener('click', () => { const isOpen = mobPanel.classList.toggle('open'); mobSq.classList.toggle('open', isOpen); maskContent.classList.toggle('panel-open', isOpen); if (streamBg) streamBg.classList.toggle('panel-open', isOpen); if (streamEl) streamEl.classList.toggle('panel-open', isOpen); });
+document.addEventListener('click', e => {
+  if (mobPanel.classList.contains('open') && !mobPanel.contains(e.target) && e.target !== mobSq) {
+    mobPanel.classList.remove('open'); mobSq.classList.remove('open'); maskContent.classList.remove('panel-open'); if (streamBg) streamBg.classList.remove('panel-open'); if (streamEl) streamEl.classList.remove('panel-open');
+  }
+});
+
+const mobArchContent = document.getElementById('mob-arch-content');
+Object.keys(density).sort((a,b) => b-a).forEach(y => {
+  const d = density[y];
+  const block = document.createElement('div'); block.className = 'arch-block';
+  const yl = document.createElement('div'); yl.className = 'yr-label'; yl.textContent = y; block.appendChild(yl);
+  const grid = document.createElement('div'); grid.className = 'sq-grid';
+  const strip = document.createElement('div'); strip.className = 'sb-strip';
+  const ss = document.createElement('span'); strip.appendChild(ss);
+  d.forEach((count, i) => {
+    const cell = document.createElement('div'); cell.className = 'sq';
+    const setC = h => {
+      if (!count) { cell.style.background = '#292f51'; cell.style.border = 'none'; cell.textContent = ''; return; }
+      if (h) { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; cell.textContent = Math.floor(Math.random()*99)+1; return; }
+      const t = count/5; cell.style.border = 'none';
+      cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; cell.textContent = '';
+    };
+    setC(false); cell.dataset.count = count;
+    cell.addEventListener('click', () => { setC(true); ss.textContent = MONTHS[i]+' '+y; ss.classList.add('on'); setTimeout(() => { setC(false); ss.classList.remove('on'); }, 1200); });
+    grid.appendChild(cell);
+  });
+  block.appendChild(grid); block.appendChild(strip); mobArchContent.appendChild(block);
+});
+
+const mobSg = document.getElementById('mob-series-grid');
+document.getElementById('mob-series-strip').innerHTML = '<span></span>';
+const mobSs = document.getElementById('mob-series-strip').querySelector('span');
+SERIES.forEach((s, i) => {
+  const cell = document.createElement('div'); cell.className = 'sq';
+  const t = (i+1)/SERIES.length;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('click', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; mobSs.textContent = s.toLowerCase(); mobSs.classList.add('on'); setTimeout(() => { base(); mobSs.classList.remove('on'); }, 1200); });
+  mobSg.appendChild(cell);
+});
+
+const mobCg = document.getElementById('mob-cat-grid');
+const mobCs = document.getElementById('mob-cat-strip');
+CATEGORIES.forEach((cat, i) => {
+  const cell = document.createElement('div'); cell.className = 'sq';
+  const t = (i+1)/CATEGORIES.length;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('click', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; mobCs.textContent = cat; mobCs.classList.add('on'); setTimeout(() => { base(); mobCs.classList.remove('on'); }, 1200); });
+  mobCg.appendChild(cell);
+});
+
+const mobTg = document.getElementById('mob-tag-grid');
+const mobTs = document.getElementById('mob-tag-strip');
+TAGS.forEach(tag => {
+  const cell = document.createElement('div'); cell.className = 'sq';
+  const t = tag.count/maxT;
+  const base = () => { cell.style.border = 'none'; cell.style.background = `rgb(${Math.round(60+t*81)},${Math.round(30+t*47)},${Math.round(90+t*55)})`; };
+  base();
+  cell.addEventListener('click', () => { cell.style.background = 'none'; cell.style.border = '1px solid #8d4d91'; mobTs.textContent = tag.label.toLowerCase(); mobTs.classList.add('on'); setTimeout(() => { base(); mobTs.classList.remove('on'); }, 1200); });
+  mobTg.appendChild(cell);
+});
+
+// mobile contact strip
+const mobContactGrid = document.getElementById('mob-contact-grid');
+document.getElementById('mob-contact-strip').innerHTML = '<span></span>';
+const mobContactStrip = document.getElementById('mob-contact-strip').querySelector('span');
+const mobContactCell = document.createElement('div');
+mobContactCell.className = 'sq';
+mobContactCell.style.cssText = 'background:#292f51;border:1px solid #292f51;cursor:pointer;';
+mobContactCell.addEventListener('click', () => { mobContactCell.style.background = 'none'; mobContactCell.style.border = '1px solid #8d4d91'; mobContactStrip.textContent = 'contact'; mobContactStrip.classList.add('on'); setTimeout(() => { mobContactCell.style.background = '#292f51'; mobContactCell.style.border = '1px solid #292f51'; mobContactStrip.classList.remove('on'); window.location.href = 'mailto:craig@craigashby.net'; }, 300); });
+mobContactGrid.appendChild(mobContactCell);
+
+const mobSearchSq = document.getElementById('mob-search-sq');
+const mobSearchWrap = document.getElementById('mob-search-wrap');
+if (mobSearchSq) { mobSearchSq.addEventListener('click', () => { mobSearchWrap.classList.add('open'); setTimeout(() => document.getElementById('mob-search-input').focus(), 220); }); }
+
+const mobAboutGrid = document.getElementById('mob-about-grid');
+document.getElementById('mob-about-strip').innerHTML = '<span></span>';
+const mobAboutCell = document.createElement('div');
+mobAboutCell.className = 'sq';
+mobAboutCell.style.cssText = 'background:#292f51;border:1px solid #292f51;cursor:pointer;';
+mobAboutCell.addEventListener('click', () => { document.getElementById('about-overlay').classList.add('open'); mobPanel.classList.remove('open'); mobSq.classList.remove('open'); });
+mobAboutGrid.appendChild(mobAboutCell);
+</script>
+
+<style>
+.search-wrap { position: relative; width: 22px; height: 22px; transition: width 0.2s ease; }
+.search-wrap.open { width: 88px; }
+.search-sq { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #292f51; border: 1px solid #292f51; cursor: pointer; transition: background 0.12s; }
+.search-wrap.open .search-sq { background: #292f51; border-color: #292f51; cursor: text; }
+.search-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: none; border: none; outline: none; font-family: 'Ubuntu Mono', monospace; font-size: 14px; color: #6b708a; letter-spacing: 0.04em; caret-color: #6b708a; padding: 0 6px; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+.search-wrap.open .search-input { opacity: 1; pointer-events: auto; }
+.search-input::placeholder { color: #505868; }
+.search-results { display: flex; flex-direction: column; gap: 0; margin-top: 6px; width: 88px; }
+.search-result { display: flex; flex-direction: column; gap: 2px; cursor: pointer; padding: 6px 0; border-bottom: 1px solid #292f51; }
+.search-result:last-child { border-bottom: none; }
+.search-result:hover .sr-title { color: #e4e5ea; }
+.sr-title { font-size: 14px; color: #6b708a; letter-spacing: 0.02em; line-height: 1.3; transition: color 0.1s; }
+.sr-meta { font-size: 12px; color: #8d4d91; letter-spacing: 0.04em; }
+.search-empty { font-size: 12px; color: #6b708a; letter-spacing: 0.04em; padding: 4px 0; }
+</style>
+
+<script>
+const SEARCH_INDEX = [
+  { title: 'untitled study, layer 4', date: 'march 24, 2026', tags: ['collage','layer','mark'], thread: 'red series', series: 'red series' },
+  { title: 'untitled study, layer 3', date: 'march 18, 2026', tags: ['collage','layer'], thread: 'red series', series: 'red series' },
+  { title: 'untitled study, layer 2', date: 'march 15, 2026', tags: ['collage','layer'], thread: 'red series', series: 'red series' },
+  { title: 'untitled study, layer 1', date: 'march 10, 2026', tags: ['collage','layer','process'], thread: 'red series', series: 'red series' },
+  { title: 'still from fragment 7', date: 'march 20, 2026', tags: ['video','found','fragment'], thread: 'fragment 7', series: 'fragment 7' },
+  { title: 'spectrogram sketch', date: 'march 16, 2026', tags: ['audio','analog','signal'], thread: null, series: 'audio studies' },
+];
+function renderResults(q) {
+  const container = document.getElementById('search-results');
+  if (!q.trim()) { container.innerHTML = ''; return; }
+  const lower = q.toLowerCase();
+  const hits = SEARCH_INDEX.filter(p => p.title.includes(lower) || (p.thread && p.thread.includes(lower)) || (p.series && p.series.includes(lower)) || p.tags.some(t => t.includes(lower)));
+  if (!hits.length) { container.innerHTML = '<div class="search-empty">no results</div>'; return; }
+  container.innerHTML = hits.map(p => `<div class="search-result"><div class="sr-title">${p.title}</div><div class="sr-meta">${p.series || p.date}</div></div>`).join('');
+}
+document.getElementById('search-input').addEventListener('input', e => renderResults(e.target.value));
+const mobSearchInput = document.getElementById('mob-search-input');
+if (mobSearchInput) {
+  mobSearchInput.addEventListener('input', e => {
+    const container = document.getElementById('mob-search-results');
+    const q = e.target.value;
+    if (!q.trim()) { container.innerHTML = ''; return; }
+    const lower = q.toLowerCase();
+    const hits = SEARCH_INDEX.filter(p => p.title.includes(lower) || (p.thread && p.thread.includes(lower)) || (p.series && p.series.includes(lower)) || p.tags.some(t => t.includes(lower)));
+    container.innerHTML = hits.length ? hits.map(p => `<div class="search-result"><div class="sr-title">${p.title}</div><div class="sr-meta">${p.series || p.date}</div></div>`).join('') : '<div class="search-empty">no results</div>';
+  });
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeSearch();
+    document.getElementById('about-overlay').classList.remove('open');
+    document.getElementById('lightbox').classList.remove('open');
+    document.getElementById('img-lightbox').classList.remove('open');
+  }
+});
+</script>
+
+<style>
+.lightbox-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(10,14,20,0.40); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); z-index: 1000; align-items: center; justify-content: center; flex-direction: column; }
+.lightbox-overlay.open { display: flex; }
+.lightbox-img-wrap { max-width: 80vw; max-height: 78vh; display: flex; align-items: center; justify-content: center; }
+.lightbox-img-wrap svg { max-width: 80vw; max-height: 78vh; width: auto; height: auto; display: block; }
+.lightbox-meta { margin-top: 18px; text-align: center; font-family: 'Ubuntu Mono', monospace; }
+.lightbox-title { font-size: 15px; color: #e4e5ea; letter-spacing: 0.04em; }
+.lightbox-date { font-size: 12px; color: #6b708a; margin-top: 4px; }
+.lightbox-nav { display: flex; gap: 40px; margin-top: 20px; align-items: center; }
+.lightbox-nav button { background: none; border: 1px solid #292f51; color: #6b708a; font-family: 'Ubuntu Mono', monospace; font-size: 11px; padding: 6px 16px; cursor: pointer; letter-spacing: 0.1em; text-transform: lowercase; }
+.lightbox-nav button:hover { color: #e4e5ea; border-color: #8d4d91; }
+.lightbox-close { position: fixed; top: 24px; right: 32px; background: none; border: none; color: #6b708a; font-family: 'Ubuntu Mono', monospace; font-size: 11px; cursor: pointer; letter-spacing: 0.1em; text-transform: lowercase; }
+.lightbox-close:hover { color: #e4e5ea; }
+.lightbox-counter { font-size: 11px; color: #6b708a; font-family: 'Ubuntu Mono', monospace; }
+.thread-tag { cursor: pointer; }
+.thread-tag:hover { border-color: #8d4d91; }
+.post-img-trigger { cursor: zoom-in; }
+.arch-thumb-tip { display: none; position: fixed; width: 64px; height: 64px; background: #151829; border: 1px solid #292f51; pointer-events: none; z-index: 500; overflow: hidden; }
+.arch-thumb-tip svg { width: 100%; height: 100%; display: block; }
+</style>
+
+<div class="lightbox-overlay" id="lightbox">
+  <button class="lightbox-close" id="lb-close">close ×</button>
+  <div class="lightbox-img-wrap" id="lb-img"></div>
+  <div class="lightbox-meta">
+    <div class="lightbox-title" id="lb-title"></div>
+    <div class="lightbox-date" id="lb-date"></div>
+  </div>
+  <div class="lightbox-nav">
+    <button id="lb-prev">← prev</button>
+    <span class="lightbox-counter" id="lb-counter"></span>
+    <button id="lb-next">next →</button>
+  </div>
+</div>
+<div class="arch-thumb-tip" id="arch-thumb"></div>
+
+<div class="lightbox-overlay" id="img-lightbox">
+  <button class="lightbox-close" id="img-lb-close">close ×</button>
+  <div class="lightbox-img-wrap" id="img-lb-img"></div>
+</div>
+
+<script>
+const THREADS = {
+  'red series': [
+    { title: 'untitled study, layer 1', date: 'march 10, 2026', svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="300" fill="#141a24"/><rect x="60" y="40" width="280" height="220" fill="#1e1428" opacity="0.9"/><circle cx="200" cy="150" r="80" fill="none" stroke="#3a2a4e" stroke-width="0.5"/></svg>` },
+    { title: 'untitled study, layer 2', date: 'march 15, 2026', svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="300" fill="#141a24"/><rect x="40" y="30" width="200" height="240" fill="#1f1a2e" opacity="0.9"/><rect x="100" y="80" width="200" height="140" fill="#2a1a1a" opacity="0.7"/></svg>` },
+    { title: 'untitled study, layer 3', date: 'march 18, 2026', svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="300" fill="#141a24"/><rect x="40" y="30" width="180" height="240" fill="#1f1a2e" opacity="0.95"/><rect x="80" y="60" width="240" height="180" fill="#2a1a1a" opacity="0.7"/><rect x="120" y="80" width="90" height="140" fill="#1a1a2e" opacity="0.85"/></svg>` },
+    { title: 'untitled study, layer 4', date: 'march 24, 2026', svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="300" fill="#141a24"/><rect x="40" y="30" width="180" height="240" fill="#1f1a2e" opacity="0.95"/><rect x="80" y="60" width="240" height="180" fill="#2a1a1a" opacity="0.7"/><line x1="0" y1="150" x2="400" y2="148" stroke="#3a3040" stroke-width="0.5"/><rect x="120" y="80" width="90" height="140" fill="#1a1a2e" opacity="0.85"/><circle cx="220" cy="150" r="55" fill="none" stroke="#3a2a4e" stroke-width="0.5"/><circle cx="220" cy="150" r="30" fill="#1e1430" opacity="0.95"/></svg>` }
+  ]
+};
+let lbThread = [], lbIndex = 0;
+function openLightbox(threadName, startIndex) {
+  lbThread = THREADS[threadName] || [];
+  if (!lbThread.length) return;
+  lbIndex = startIndex || lbThread.length - 1;
+  renderLightbox();
+  document.getElementById('lightbox').classList.add('open');
+}
+function renderLightbox() {
+  const item = lbThread[lbIndex];
+  document.getElementById('lb-img').innerHTML = item.svg;
+  document.getElementById('lb-title').textContent = item.title;
+  document.getElementById('lb-date').textContent = item.date;
+  document.getElementById('lb-counter').textContent = (lbIndex + 1) + ' / ' + lbThread.length;
+  document.getElementById('lb-prev').style.opacity = lbIndex > 0 ? '1' : '0.2';
+  document.getElementById('lb-next').style.opacity = lbIndex < lbThread.length - 1 ? '1' : '0.2';
+}
+document.getElementById('lb-close').addEventListener('click', () => { document.getElementById('lightbox').classList.remove('open'); });
+document.getElementById('lb-prev').addEventListener('click', () => { if (lbIndex > 0) { lbIndex--; renderLightbox(); } });
+document.getElementById('lb-next').addEventListener('click', () => { if (lbIndex < lbThread.length - 1) { lbIndex++; renderLightbox(); } });
+document.querySelectorAll('.thread-tag').forEach(tag => { tag.addEventListener('click', () => { openLightbox(tag.textContent.replace('→ ', '').trim(), 0); }); });
+
+const archThumb = document.getElementById('arch-thumb');
+const thumbSVGs = [
+  `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#141a24"/><rect x="8" y="8" width="30" height="48" fill="#1f1a2e" opacity="0.95"/><circle cx="40" cy="32" r="16" fill="none" stroke="#3a2a4e" stroke-width="0.5"/></svg>`,
+  `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0e1218"/><rect x="8" y="8" width="24" height="48" fill="#251820" opacity="0.8"/><rect x="36" y="8" width="20" height="48" fill="#201520" opacity="0.7"/></svg>`,
+  `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0f1220"/><rect x="0" y="0" width="32" height="64" fill="#14182a" opacity="0.7"/><rect x="32" y="0" width="32" height="64" fill="#181420" opacity="0.7"/></svg>`,
+  `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#141a24"/><rect x="4" y="4" width="56" height="56" fill="none" stroke="#2a3a50" stroke-width="0.5"/><rect x="12" y="12" width="40" height="40" fill="#1e1830" opacity="0.8"/></svg>`,
+  `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0e1218"/><circle cx="32" cy="32" r="24" fill="none" stroke="#3a2535" stroke-width="0.5"/><rect x="16" y="16" width="32" height="32" fill="#251820" opacity="0.7"/></svg>`,
+];
+document.querySelectorAll('.month-cell').forEach((cell, i) => {
+  cell.addEventListener('mouseenter', e => { if (cell.dataset.count === '0') return; archThumb.innerHTML = thumbSVGs[i % thumbSVGs.length]; archThumb.style.display = 'block'; const rect = cell.getBoundingClientRect(); archThumb.style.left = (rect.right + 8) + 'px'; archThumb.style.top = (rect.top - 24) + 'px'; });
+  cell.addEventListener('mouseleave', () => { archThumb.style.display = 'none'; });
+});
+
+const imgLightbox = document.getElementById('img-lightbox');
+const imgLbImg = document.getElementById('img-lb-img');
+document.querySelectorAll('.post-img-trigger').forEach(img => {
+  img.addEventListener('click', () => { imgLbImg.innerHTML = `<img src="${img.dataset.src}" alt="${img.dataset.title || img.alt}" style="max-width:90vw;max-height:90vh;object-fit:contain;display:block;">`; imgLightbox.classList.add('open'); });
+});
+document.getElementById('img-lb-close').addEventListener('click', () => { imgLightbox.classList.remove('open'); imgLbImg.innerHTML = ''; });
+imgLightbox.addEventListener('click', e => { if (e.target === imgLightbox) { imgLightbox.classList.remove('open'); imgLbImg.innerHTML = ''; } });
+</script>
+
+<style>
+.about-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(10,14,20,0.40); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); z-index: 1000; overflow-y: auto; }
+.about-overlay.open { display: block; }
+.about-close { position: fixed; top: 24px; right: 32px; background: none; border: none; color: #6b708a; font-family: 'Ubuntu Mono', monospace; font-size: 11px; cursor: pointer; letter-spacing: 0.1em; text-transform: lowercase; z-index: 1001; }
+.about-close:hover { color: #e4e5ea; }
+.about-inner { display: flex; flex-direction: row; align-items: center; gap: 48px; padding: 100px 28px 80px 48px; max-width: 1200px; margin: 0 auto; }
+.about-img { flex: 0 0 auto; }
+.about-img img { display: block; width: auto; height: auto; max-height: calc(100vh - 160px); object-fit: contain; object-position: top left; }
+.about-bio { width: 480px; min-width: 480px; font-size: 16px; color: #aaaaaa; line-height: 1.7; }
+.about-bio p { margin-bottom: 1.4em; }
+.about-bio p:last-child { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .about-inner { flex-direction: column; padding: 80px 24px 48px; gap: 32px; max-width: 100%; }
+  .about-img img { max-height: 50vh; max-width: 100%; width: auto; object-position: top center; }
+  .about-bio { width: 100%; min-width: 0; font-size: 15px; }
+}
+</style>
+
+<div class="about-overlay" id="about-overlay">
+  <button class="about-close" id="about-close">close ×</button>
+  <div class="about-inner">
+    <div class="about-img"><img src="About2.jpg" alt="craig ashby"></div>
+    <div class="about-bio">
+      <p>born and raised in north carolina.<br>nyc since 1997.</p>
+      <p>mechanical paste up for a daily newspaper.<br>pre-desktop publishing. printed typeset,<br>t-square, x-acto knife, hot wax machine,<br>large scale photocopiers.<br>everything by hand.</p>
+      <p>hospice care for the terminally ill.<br>underground dance parties across the southeast.<br>simultaneously.</p>
+      <p>syringe exchange.<br>oldest ethnographic art gallery in nyc.<br>photo editing from step and repeat events<br>to fashion weeks worldwide.</p>
+      <p>the medium is secondary.</p>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('about-close').addEventListener('click', () => { document.getElementById('about-overlay').classList.remove('open'); });
+</script>
+
+<script>
+// ── Animation — INERTIAL STEERING with full tile field ──
+new p5(function(p) {
+
+  // Tile geometry (unchanged from original)
+  const R     = 200;
+  const INNER = R / 2;
+  const SQ3   = Math.sqrt(3);
+  const V = [
+    [0,            -R],
+    [R*SQ3/2,      -R/2],
+    [R*SQ3/2,       R/2],
+    [0,             R],
+    [-R*SQ3/2,      R/2],
+    [-R*SQ3/2,     -R/2],
+  ];
+  function mid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2]; }
+  const M = [];
+  for (let i = 0; i < 6; i++) M.push(mid(V[i], V[(i+1)%6]));
+  const I = [
+    [0,            -INNER],
+    [INNER*SQ3/2,  -INNER/2],
+    [INNER*SQ3/2,   INNER/2],
+    [0,             INNER],
+    [-INNER*SQ3/2,  INNER/2],
+    [-INNER*SQ3/2, -INNER/2],
+  ];
+  const CENTER = [0, 0];
+  const FACE_TOP   = [V[5], M[5], I[0], M[0], V[1], CENTER];
+  const FACE_RIGHT = [V[1], M[1], I[2], M[2], V[3], CENTER];
+  const FACE_LEFT  = [V[5], CENTER, V[3], M[3], I[4], M[4]];
+
+  const VERT_DY  = 300;
+  const HORIZ_DX = I[2][0] - V[5][0];
+  const HORIZ_DY = I[2][1] - V[5][1];
+  const TILE_SPAN_X = (R*SQ3/2 - (-R*SQ3/2));
+  const sc = 98.3 / TILE_SPAN_X;   // IMPORTANT: scaling factor for tile spacing
+
+  const ROT_SPEED_TOP   =  -0.0009;
+  const ROT_SPEED_LEFT  =  0.0011;
+  const ROT_SPEED_RIGHT =  -0.0007;
+
+  let imgTop, imgLeft, imgRight;
+  let bufTop, bufLeft, bufRight;
+  let angleTop = 0, angleLeft = 0, angleRight = 0;
+
+  // ── Inertial steering variables ──
+  let vx = 1.2, vy = 0.8;
+  let scrollX = 0.0, scrollY = 0.0;
+
+  const FORCE_GAIN = 0.12;
+  const DAMPING = 1;
+  const MAX_SPEED = 2.0;
+
+  let frozen = false;
+
+  function isInteractiveElement(el) {
+    if (!el) return false;
+    return el.closest('a, button, .sq, .search-sq, .search-input, .mob-sq, .thread-tag, .post-link, .lightbox-overlay, .about-overlay, .search-result') !== null;
+  }
+
+  function isOverControlZone(e) {
+    const target = e.target;
+    const headerOrSidebar = target.closest('.site-header, .sidebar');
+    if (!headerOrSidebar) return false;
+    return !isInteractiveElement(target);
+  }
+
+  function isOverStream(e) {
+    return e.target.closest('.stream') !== null;
+  }
+
+  p.preload = function() {
+    imgTop   = p.loadImage('Image1.png');
+    imgLeft  = p.loadImage('Image2.png');
+    imgRight = p.loadImage('Image3.png');
+  };
+
+  p.setup = function() {
+    let cnv = p.createCanvas(window.innerWidth, window.innerHeight);
+    cnv.parent('animation-canvas');
+    cnv.style('display', 'block');
+    bufTop   = p.createGraphics(p.width, p.height);
+    bufLeft  = p.createGraphics(p.width, p.height);
+    bufRight = p.createGraphics(p.width, p.height);
+    p.frameRate(30);
+
+    let holdTimer = null;
+
+    // Mouse move → apply force
+    document.addEventListener('mousemove', function(e) {
+      if (frozen) return;
+      if (isOverStream(e)) return;
+      if (!isOverControlZone(e)) return;
+
+      const dx = e.movementX;
+      const dy = e.movementY;
+      const speed = Math.sqrt(dx*dx + dy*dy);
+      if (speed < 0.5) return;
+      const nx = dx / speed;
+      const ny = dy / speed;
+      let forceMag = Math.min(speed, 25) * FORCE_GAIN;
+      vx += nx * forceMag;
+      vy += ny * forceMag;
+      let spd = Math.sqrt(vx*vx + vy*vy);
+      if (spd > MAX_SPEED) {
+        vx = (vx / spd) * MAX_SPEED;
+        vy = (vy / spd) * MAX_SPEED;
+      }
+    });
+
+    // Click-and-hold freeze only on header/sidebar background
+    document.addEventListener('mousedown', function(e) {
+      if (isOverStream(e)) return;
+      if (!isOverControlZone(e)) return;
+      holdTimer = setTimeout(() => { frozen = true; }, 200);
+    });
+    document.addEventListener('mouseup', function() {
+      clearTimeout(holdTimer);
+      frozen = false;
+    });
+
+    // Touch support (same logic)
+    let lastTouchX = 0, lastTouchY = 0;
+    document.addEventListener('touchstart', function(e) {
+      if (isOverStream(e)) return;
+      if (!isOverControlZone(e)) return;
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+      holdTimer = setTimeout(() => { frozen = true; }, 200);
+    }, { passive: true });
+    document.addEventListener('touchmove', function(e) {
+      if (frozen) return;
+      if (isOverStream(e)) return;
+      if (!isOverControlZone(e)) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - lastTouchX;
+      const dy = touch.clientY - lastTouchY;
+      lastTouchX = touch.clientX;
+      lastTouchY = touch.clientY;
+      const speed = Math.sqrt(dx*dx + dy*dy);
+      if (speed < 0.5) return;
+      const nx = dx / speed;
+      const ny = dy / speed;
+      let forceMag = Math.min(speed, 25) * FORCE_GAIN;
+      vx += nx * forceMag;
+      vy += ny * forceMag;
+      let spd = Math.sqrt(vx*vx + vy*vy);
+      if (spd > MAX_SPEED) {
+        vx = (vx / spd) * MAX_SPEED;
+        vy = (vy / spd) * MAX_SPEED;
+      }
+    }, { passive: true });
+    document.addEventListener('touchend', function() {
+      clearTimeout(holdTimer);
+      frozen = false;
+    });
+  };
+
+  p.windowResized = function() {
+    p.resizeCanvas(window.innerWidth, window.innerHeight);
+    bufTop.remove(); bufLeft.remove(); bufRight.remove();
+    bufTop   = p.createGraphics(p.width, p.height);
+    bufLeft  = p.createGraphics(p.width, p.height);
+    bufRight = p.createGraphics(p.width, p.height);
+  };
+
+  function updateBuffer(buf, img, angle) {
+    buf.clear();
+    buf.push();
+    buf.translate(buf.width / 2, buf.height / 2);
+    buf.rotate(angle);
+    const imgSize = Math.sqrt(buf.width * buf.width + buf.height * buf.height) * 1.2;
+    buf.imageMode(p.CENTER);
+    buf.image(img, 0, 0, imgSize, imgSize);
+    buf.pop();
+  }
+
+  function drawFace(facePoints, buf, tx, ty) {
+    const pts = facePoints.map(pt => [tx + pt[0] * sc, ty + pt[1] * sc]);
+    const ctx = p.drawingContext;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    p.push();
+    p.imageMode(p.CORNER);
+    p.image(buf, 0, 0);
+    p.pop();
+    ctx.restore();
+    p.noFill();
+    p.stroke(141, 77, 145);
+    p.strokeWeight(1.5);
+    p.beginShape();
+    pts.forEach(pt => p.vertex(pt[0], pt[1]));
+    p.endShape(p.CLOSE);
+  }
+
+  function drawCube(tx, ty) {
+    drawFace(FACE_TOP,   bufTop,   tx, ty);
+    drawFace(FACE_RIGHT, bufRight, tx, ty);
+    drawFace(FACE_LEFT,  bufLeft,  tx, ty);
+  }
+
+  p.draw = function() {
+    p.background(21, 24, 41);
+
+    if (!frozen) {
+      angleTop   += ROT_SPEED_TOP;
+      angleLeft  += ROT_SPEED_LEFT;
+      angleRight += ROT_SPEED_RIGHT;
+
+      vx *= DAMPING;
+      vy *= DAMPING;
+      scrollX += vx;
+      scrollY += vy;
+    }
+
+    updateBuffer(bufTop,   imgTop,   angleTop);
+    updateBuffer(bufLeft,  imgLeft,  angleLeft);
+    updateBuffer(bufRight, imgRight, angleRight);
+
+    // ── CRITICAL: apply scaling to grid steps (same as original) ──
+    const colDX = HORIZ_DX * sc;
+    const colDY = HORIZ_DY * sc;
+    const rowDY = VERT_DY * sc;
+
+    const w = p.width;
+    const h = p.height;
+    const originX = w/2 + scrollX;
+    const originY = h/2 + scrollY;
+
+    const colForX = (sx) => (sx - originX) / colDX;
+    let colMin = Math.floor(Math.min(colForX(0), colForX(w))) - 2;
+    let colMax = Math.ceil(Math.max(colForX(0), colForX(w)))  + 2;
+
+    for (let col = colMin; col <= colMax; col++) {
+      const baseY = originY + col * colDY;
+      const rowForY = (sy) => (sy - baseY) / rowDY;
+      let rowMin = Math.floor(Math.min(rowForY(0), rowForY(h))) - 2;
+      let rowMax = Math.ceil(Math.max(rowForY(0), rowForY(h)))  + 2;
+
+      for (let row = rowMin; row <= rowMax; row++) {
+        const tileX = originX + col * colDX;
+        const tileY = baseY   + row * rowDY;
+        drawCube(tileX, tileY);
+      }
+    }
+  };
+
+}, document.getElementById('animation-canvas'));
+</script>
+
+</body>
+</html>
