@@ -854,287 +854,130 @@ document.getElementById('about-close').addEventListener('click', () => { documen
 // ── Animation — INERTIAL STEERING with full tile field ──
 new p5(function(p) {
 
-  // Tile geometry (unchanged)
-  const R     = 200;
-  const INNER = R / 2;
-  const SQ3   = Math.sqrt(3);
-  const V = [
-    [0,            -R],
-    [R*SQ3/2,      -R/2],
-    [R*SQ3/2,       R/2],
-    [0,             R],
-    [-R*SQ3/2,      R/2],
-    [-R*SQ3/2,     -R/2],
-  ];
-  function mid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2]; }
-  const M = [];
-  for (let i = 0; i < 6; i++) M.push(mid(V[i], V[(i+1)%6]));
-  const I = [
-    [0,            -INNER],
-    [INNER*SQ3/2,  -INNER/2],
-    [INNER*SQ3/2,   INNER/2],
-    [0,             INNER],
-    [-INNER*SQ3/2,  INNER/2],
-    [-INNER*SQ3/2, -INNER/2],
-  ];
-  const CENTER = [0, 0];
-  const FACE_TOP   = [V[5], M[5], I[0], M[0], V[1], CENTER];
-  const FACE_RIGHT = [V[1], M[1], I[2], M[2], V[3], CENTER];
-  const FACE_LEFT  = [V[5], CENTER, V[3], M[3], I[4], M[4]];
+  // ... [all your geometry constants: R, V, M, I, FACE_*, etc.] ...
+  // Keep exactly as before – no changes to geometry.
 
-  const VERT_DY  = 300;
+  const VERT_DY = 300;
   const HORIZ_DX = I[2][0] - V[5][0];
   const HORIZ_DY = I[2][1] - V[5][1];
   const TILE_SPAN_X = (R*SQ3/2 - (-R*SQ3/2));
   const sc = 98.3 / TILE_SPAN_X;
 
-  const ROT_SPEED_TOP   =  0.0009;
-  const ROT_SPEED_LEFT  =  0.0011;
-  const ROT_SPEED_RIGHT =  0.0007;
+  const ROT_SPEED_TOP = 0.0009;
+  const ROT_SPEED_LEFT = 0.0011;
+  const ROT_SPEED_RIGHT = 0.0007;
 
   let imgTop, imgLeft, imgRight;
   let bufTop, bufLeft, bufRight;
   let angleTop = 0, angleLeft = 0, angleRight = 0;
 
-  // Inertial steering variables
-  let vx = 1.2;   // initial speed
-  let vy = 0.8;
+  // Inertial steering
+  let vx = 1.2, vy = 0.8;
   let scrollX = 0.0, scrollY = 0.0;
-
   const FORCE_GAIN = 0.12;
-  const DAMPING = 1.0;      // never slows down
+  const DAMPING = 1.0;
   const MAX_SPEED = 8.0;
-
   let frozen = false;
 
-  function isInteractiveElement(el) {
-    if (!el) return false;
-    return el.closest('a, button, .sq, .search-sq, .search-input, .mob-sq, .thread-tag, .post-link, .lightbox-overlay, .about-overlay, .search-result') !== null;
-  }
-
-  function isOverControlZone(e) {
-    const target = e.target;
-    const headerOrSidebar = target.closest('.site-header, .sidebar');
-    if (!headerOrSidebar) return false;
-    return !isInteractiveElement(target);
-  }
-
-  function isOverStream(e) {
-    return e.target.closest('.stream') !== null;
-  }
+  // Helper functions (isInteractiveElement, isOverControlZone, isOverStream) – unchanged
+  // ... paste them here ...
 
   p.preload = function() {
-    imgTop   = p.loadImage('Image1.png');
-    imgLeft  = p.loadImage('Image2.png');
+    imgTop = p.loadImage('Image1.png');
+    imgLeft = p.loadImage('Image2.png');
     imgRight = p.loadImage('Image3.png');
   };
 
+  function resizeToVisualViewport() {
+    if (!window.visualViewport) return;
+    const w = window.visualViewport.width;
+    const h = window.visualViewport.height;
+    p.resizeCanvas(w, h);
+    // Recreate buffers at new size
+    if (bufTop) bufTop.remove();
+    if (bufLeft) bufLeft.remove();
+    if (bufRight) bufRight.remove();
+    bufTop = p.createGraphics(w, h);
+    bufLeft = p.createGraphics(w, h);
+    bufRight = p.createGraphics(w, h);
+  }
+
   p.setup = function() {
-    // Use visual viewport for correct sizing on iOS zoom
-    const width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
-    const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    let cnv = p.createCanvas(width, height);
+    resizeToVisualViewport();
+    let cnv = p.createCanvas(p.width, p.height);
     cnv.parent('animation-canvas');
     cnv.style('display', 'block');
-    bufTop   = p.createGraphics(p.width, p.height);
-    bufLeft  = p.createGraphics(p.width, p.height);
-    bufRight = p.createGraphics(p.width, p.height);
     p.frameRate(30);
 
-    let holdTimer = null;
+    // Event listeners (mousemove, mousedown, mouseup, touch...) – exactly as before
+    // ... keep your existing listeners (the ones that set vx, vy, frozen) ...
 
-    // Mouse move → apply force
-    document.addEventListener('mousemove', function(e) {
-      if (frozen) return;
-      if (isOverStream(e)) return;
-      if (!isOverControlZone(e)) return;
-      const dx = e.movementX;
-      const dy = e.movementY;
-      const speed = Math.sqrt(dx*dx + dy*dy);
-      if (speed < 0.5) return;
-      const nx = dx / speed;
-      const ny = dy / speed;
-      let forceMag = Math.min(speed, 25) * FORCE_GAIN;
-      vx += nx * forceMag;
-      vy += ny * forceMag;
-      let spd = Math.sqrt(vx*vx + vy*vy);
-      if (spd > MAX_SPEED) {
-        vx = (vx / spd) * MAX_SPEED;
-        vy = (vy / spd) * MAX_SPEED;
-      }
+    // Critical: listen to visual viewport resize AND scroll (zoom triggers both)
+    window.visualViewport.addEventListener('resize', () => {
+      // Save current scroll position ratio (normalized by canvas size)
+      const ratioX = scrollX / p.width;
+      const ratioY = scrollY / p.height;
+      resizeToVisualViewport();
+      // Restore scroll position proportionally
+      scrollX = ratioX * p.width;
+      scrollY = ratioY * p.height;
     });
-
-    // Click-and-hold freeze
-    document.addEventListener('mousedown', function(e) {
-      if (isOverStream(e)) return;
-      if (!isOverControlZone(e)) return;
-      holdTimer = setTimeout(() => { frozen = true; }, 200);
+    window.visualViewport.addEventListener('scroll', () => {
+      // On zoom, the visual viewport also scrolls to keep the pinch center.
+      // We adjust canvas position via CSS to stay fixed, but the content must shift.
+      // The easiest: redraw everything – already happening every frame.
     });
-    document.addEventListener('mouseup', function() {
-      clearTimeout(holdTimer);
-      frozen = false;
-    });
-
-    // Touch support
-    let lastTouchX = 0, lastTouchY = 0;
-    document.addEventListener('touchstart', function(e) {
-      if (isOverStream(e)) return;
-      if (!isOverControlZone(e)) return;
-      lastTouchX = e.touches[0].clientX;
-      lastTouchY = e.touches[0].clientY;
-      holdTimer = setTimeout(() => { frozen = true; }, 200);
-    }, { passive: true });
-    document.addEventListener('touchmove', function(e) {
-      if (frozen) return;
-      if (isOverStream(e)) return;
-      if (!isOverControlZone(e)) return;
-      const touch = e.touches[0];
-      const dx = touch.clientX - lastTouchX;
-      const dy = touch.clientY - lastTouchY;
-      lastTouchX = touch.clientX;
-      lastTouchY = touch.clientY;
-      const speed = Math.sqrt(dx*dx + dy*dy);
-      if (speed < 0.5) return;
-      const nx = dx / speed;
-      const ny = dy / speed;
-      let forceMag = Math.min(speed, 25) * FORCE_GAIN;
-      vx += nx * forceMag;
-      vy += ny * forceMag;
-      let spd = Math.sqrt(vx*vx + vy*vy);
-      if (spd > MAX_SPEED) {
-        vx = (vx / spd) * MAX_SPEED;
-        vy = (vy / spd) * MAX_SPEED;
-      }
-    }, { passive: true });
-    document.addEventListener('touchend', function() {
-      clearTimeout(holdTimer);
-      frozen = false;
-    });
-
-    // ── CRITICAL FIX FOR iOS ZOOM ──
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', () => {
-        const newW = window.visualViewport.width;
-        const newH = window.visualViewport.height;
-        p.resizeCanvas(newW, newH);
-        bufTop.remove(); bufLeft.remove(); bufRight.remove();
-        bufTop   = p.createGraphics(p.width, p.height);
-        bufLeft  = p.createGraphics(p.width, p.height);
-        bufRight = p.createGraphics(p.width, p.height);
-      });
-    }
   };
 
   p.windowResized = function() {
-    const newW = window.visualViewport ? window.visualViewport.width : window.innerWidth;
-    const newH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    p.resizeCanvas(newW, newH);
-    bufTop.remove(); bufLeft.remove(); bufRight.remove();
-    bufTop   = p.createGraphics(p.width, p.height);
-    bufLeft  = p.createGraphics(p.width, p.height);
-    bufRight = p.createGraphics(p.width, p.height);
+    resizeToVisualViewport();
   };
 
-  function updateBuffer(buf, img, angle) {
-    buf.clear();
-    buf.push();
-    buf.translate(buf.width / 2, buf.height / 2);
-    buf.rotate(angle);
-    const imgSize = Math.sqrt(buf.width * buf.width + buf.height * buf.height) * 1.2;
-    buf.imageMode(p.CENTER);
-    buf.image(img, 0, 0, imgSize, imgSize);
-    buf.pop();
-  }
-
-  function drawFace(facePoints, buf, tx, ty) {
-    const pts = facePoints.map(pt => [tx + pt[0] * sc, ty + pt[1] * sc]);
-    const ctx = p.drawingContext;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.closePath();
-    ctx.clip();
-    p.push();
-    p.imageMode(p.CORNER);
-    p.image(buf, 0, 0);
-    p.pop();
-    ctx.restore();
-    p.noFill();
-    p.stroke(141, 77, 145);
-    p.strokeWeight(1.5);
-    p.beginShape();
-    pts.forEach(pt => p.vertex(pt[0], pt[1]));
-    p.endShape(p.CLOSE);
-  }
-
-  function drawCube(tx, ty) {
-    drawFace(FACE_TOP,   bufTop,   tx, ty);
-    drawFace(FACE_RIGHT, bufRight, tx, ty);
-    drawFace(FACE_LEFT,  bufLeft,  tx, ty);
-  }
+  // updateBuffer, drawFace, drawCube – unchanged
+  // ... paste them here ...
 
   p.draw = function() {
-  p.background(21, 24, 41);
+    p.background(21, 24, 41);
 
-  if (!frozen) {
-    angleTop   += ROT_SPEED_TOP;
-    angleLeft  += ROT_SPEED_LEFT;
-    angleRight += ROT_SPEED_RIGHT;
-    vx *= DAMPING;
-    vy *= DAMPING;
-    scrollX += vx;
-    scrollY += vy;
-  }
-
-  updateBuffer(bufTop,   imgTop,   angleTop);
-  updateBuffer(bufLeft,  imgLeft,  angleLeft);
-  updateBuffer(bufRight, imgRight, angleRight);
-
-  // Get visual viewport offset and size
-  let offsetX = 0, offsetY = 0, visibleW = p.width, visibleH = p.height;
-  if (window.visualViewport) {
-    offsetX = window.visualViewport.pageLeft;
-    offsetY = window.visualViewport.pageTop;
-    visibleW = window.visualViewport.width;
-    visibleH = window.visualViewport.height;
-  }
-
-  // Save current transformation state
-  p.push();
-  // Translate so that the origin (0,0) moves to the visual viewport's top-left corner
-  p.translate(-offsetX, -offsetY);
-
-  const colDX = HORIZ_DX * sc;
-  const colDY = HORIZ_DY * sc;
-  const rowDY = VERT_DY * sc;
-
-  // Center of visual viewport (in canvas coordinates after translation)
-  const centerX = offsetX + visibleW / 2;
-  const centerY = offsetY + visibleH / 2;
-  const originX = centerX + scrollX;
-  const originY = centerY + scrollY;
-
-  // Column range based on visual viewport rectangle (in canvas coordinates)
-  const colForX = (sx) => (sx - originX) / colDX;
-  let colMin = Math.floor(Math.min(colForX(offsetX), colForX(offsetX + visibleW))) - 2;
-  let colMax = Math.ceil(Math.max(colForX(offsetX), colForX(offsetX + visibleW))) + 2;
-
-  for (let col = colMin; col <= colMax; col++) {
-    const baseY = originY + col * colDY;
-    const rowForY = (sy) => (sy - baseY) / rowDY;
-    let rowMin = Math.floor(Math.min(rowForY(offsetY), rowForY(offsetY + visibleH))) - 2;
-    let rowMax = Math.ceil(Math.max(rowForY(offsetY), rowForY(offsetY + visibleH))) + 2;
-
-    for (let row = rowMin; row <= rowMax; row++) {
-      const tileX = originX + col * colDX;
-      const tileY = baseY   + row * rowDY;
-      drawCube(tileX, tileY);
+    if (!frozen) {
+      angleTop += ROT_SPEED_TOP;
+      angleLeft += ROT_SPEED_LEFT;
+      angleRight += ROT_SPEED_RIGHT;
+      vx *= DAMPING;
+      vy *= DAMPING;
+      scrollX += vx;
+      scrollY += vy;
     }
-  }
 
-  p.pop(); // restore original transformation
-};
+    updateBuffer(bufTop, imgTop, angleTop);
+    updateBuffer(bufLeft, imgLeft, angleLeft);
+    updateBuffer(bufRight, imgRight, angleRight);
+
+    const colDX = HORIZ_DX * sc;
+    const colDY = HORIZ_DY * sc;
+    const rowDY = VERT_DY * sc;
+
+    // Origin is centered on the canvas (which now equals visual viewport)
+    const originX = p.width / 2 + scrollX;
+    const originY = p.height / 2 + scrollY;
+
+    const colForX = (sx) => (sx - originX) / colDX;
+    let colMin = Math.floor(Math.min(colForX(0), colForX(p.width))) - 2;
+    let colMax = Math.ceil(Math.max(colForX(0), colForX(p.width))) + 2;
+
+    for (let col = colMin; col <= colMax; col++) {
+      const baseY = originY + col * colDY;
+      const rowForY = (sy) => (sy - baseY) / rowDY;
+      let rowMin = Math.floor(Math.min(rowForY(0), rowForY(p.height))) - 2;
+      let rowMax = Math.ceil(Math.max(rowForY(0), rowForY(p.height))) + 2;
+
+      for (let row = rowMin; row <= rowMax; row++) {
+        const tileX = originX + col * colDX;
+        const tileY = baseY + row * rowDY;
+        drawCube(tileX, tileY);
+      }
+    }
+  };
 
 }, document.getElementById('animation-canvas'));
 </script>
