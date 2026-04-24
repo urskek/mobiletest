@@ -1075,49 +1075,59 @@ new p5(function(p) {
   }
 
   p.draw = function() {
-    p.background(21, 24, 41);
+  p.background(21, 24, 41);
 
-    if (!frozen) {
-      angleTop   += ROT_SPEED_TOP;
-      angleLeft  += ROT_SPEED_LEFT;
-      angleRight += ROT_SPEED_RIGHT;
+  if (!frozen) {
+    angleTop   += ROT_SPEED_TOP;
+    angleLeft  += ROT_SPEED_LEFT;
+    angleRight += ROT_SPEED_RIGHT;
+    vx *= DAMPING;
+    vy *= DAMPING;
+    scrollX += vx;
+    scrollY += vy;
+  }
 
-      vx *= DAMPING;
-      vy *= DAMPING;
-      scrollX += vx;
-      scrollY += vy;
+  updateBuffer(bufTop,   imgTop,   angleTop);
+  updateBuffer(bufLeft,  imgLeft,  angleLeft);
+  updateBuffer(bufRight, imgRight, angleRight);
+
+  // ── Get the actual visible rectangle (visual viewport) ──
+  let visibleLeft = 0, visibleTop = 0, visibleW = p.width, visibleH = p.height;
+  if (window.visualViewport) {
+    visibleLeft = window.visualViewport.pageLeft;
+    visibleTop  = window.visualViewport.pageTop;
+    visibleW    = window.visualViewport.width;
+    visibleH    = window.visualViewport.height;
+  }
+
+  const colDX = HORIZ_DX * sc;
+  const colDY = HORIZ_DY * sc;
+  const rowDY = VERT_DY * sc;
+
+  // Origin is centered on the visual viewport's center (in canvas coordinates)
+  const centerX = visibleLeft + visibleW / 2;
+  const centerY = visibleTop  + visibleH / 2;
+  const originX = centerX + scrollX;
+  const originY = centerY + scrollY;
+
+  // Tile column range based on visible rectangle
+  const colForX = (sx) => (sx - originX) / colDX;
+  let colMin = Math.floor(Math.min(colForX(visibleLeft), colForX(visibleLeft + visibleW))) - 2;
+  let colMax = Math.ceil(Math.max(colForX(visibleLeft), colForX(visibleLeft + visibleW))) + 2;
+
+  for (let col = colMin; col <= colMax; col++) {
+    const baseY = originY + col * colDY;
+    const rowForY = (sy) => (sy - baseY) / rowDY;
+    let rowMin = Math.floor(Math.min(rowForY(visibleTop), rowForY(visibleTop + visibleH))) - 2;
+    let rowMax = Math.ceil(Math.max(rowForY(visibleTop), rowForY(visibleTop + visibleH))) + 2;
+
+    for (let row = rowMin; row <= rowMax; row++) {
+      const tileX = originX + col * colDX;
+      const tileY = baseY   + row * rowDY;
+      drawCube(tileX, tileY);
     }
-
-    updateBuffer(bufTop,   imgTop,   angleTop);
-    updateBuffer(bufLeft,  imgLeft,  angleLeft);
-    updateBuffer(bufRight, imgRight, angleRight);
-
-    const colDX = HORIZ_DX * sc;
-    const colDY = HORIZ_DY * sc;
-    const rowDY = VERT_DY * sc;
-
-    const w = p.width;
-    const h = p.height;
-    const originX = w/2 + scrollX;
-    const originY = h/2 + scrollY;
-
-    const colForX = (sx) => (sx - originX) / colDX;
-    let colMin = Math.floor(Math.min(colForX(0), colForX(w))) - 2;
-    let colMax = Math.ceil(Math.max(colForX(0), colForX(w)))  + 2;
-
-    for (let col = colMin; col <= colMax; col++) {
-      const baseY = originY + col * colDY;
-      const rowForY = (sy) => (sy - baseY) / rowDY;
-      let rowMin = Math.floor(Math.min(rowForY(0), rowForY(h))) - 2;
-      let rowMax = Math.ceil(Math.max(rowForY(0), rowForY(h)))  + 2;
-
-      for (let row = rowMin; row <= rowMax; row++) {
-        const tileX = originX + col * colDX;
-        const tileY = baseY   + row * rowDY;
-        drawCube(tileX, tileY);
-      }
-    }
-  };
+  }
+};
 
 }, document.getElementById('animation-canvas'));
 </script>
