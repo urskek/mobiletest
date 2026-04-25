@@ -854,114 +854,150 @@ document.getElementById('about-close').addEventListener('click', () => { documen
 // ── Animation — INERTIAL STEERING with full tile field ──
 new p5(function(p) {
 
-  // Tile geometry (unchanged from original)
-  const R     = 200;
+  // ========== Geometry (unchanged) ==========
+  const R = 200;
   const INNER = R / 2;
-  const SQ3   = Math.sqrt(3);
+  const SQ3 = Math.sqrt(3);
   const V = [
-    [0,            -R],
-    [R*SQ3/2,      -R/2],
-    [R*SQ3/2,       R/2],
-    [0,             R],
-    [-R*SQ3/2,      R/2],
-    [-R*SQ3/2,     -R/2],
+    [0, -R],
+    [R*SQ3/2, -R/2],
+    [R*SQ3/2, R/2],
+    [0, R],
+    [-R*SQ3/2, R/2],
+    [-R*SQ3/2, -R/2]
   ];
-  function mid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2]; }
+  function mid(a,b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2]; }
   const M = [];
-  for (let i = 0; i < 6; i++) M.push(mid(V[i], V[(i+1)%6]));
+  for (let i=0;i<6;i++) M.push(mid(V[i], V[(i+1)%6]));
   const I = [
-    [0,            -INNER],
-    [INNER*SQ3/2,  -INNER/2],
-    [INNER*SQ3/2,   INNER/2],
-    [0,             INNER],
-    [-INNER*SQ3/2,  INNER/2],
-    [-INNER*SQ3/2, -INNER/2],
+    [0, -INNER],
+    [INNER*SQ3/2, -INNER/2],
+    [INNER*SQ3/2, INNER/2],
+    [0, INNER],
+    [-INNER*SQ3/2, INNER/2],
+    [-INNER*SQ3/2, -INNER/2]
   ];
-  const CENTER = [0, 0];
-  const FACE_TOP   = [V[5], M[5], I[0], M[0], V[1], CENTER];
+  const CENTER = [0,0];
+  const FACE_TOP = [V[5], M[5], I[0], M[0], V[1], CENTER];
   const FACE_RIGHT = [V[1], M[1], I[2], M[2], V[3], CENTER];
-  const FACE_LEFT  = [V[5], CENTER, V[3], M[3], I[4], M[4]];
+  const FACE_LEFT = [V[5], CENTER, V[3], M[3], I[4], M[4]];
 
-  const VERT_DY  = 300;
+  const VERT_DY = 300;
   const HORIZ_DX = I[2][0] - V[5][0];
   const HORIZ_DY = I[2][1] - V[5][1];
   const TILE_SPAN_X = (R*SQ3/2 - (-R*SQ3/2));
-  const sc = 98.3 / TILE_SPAN_X;   // IMPORTANT: scaling factor for tile spacing
+  const sc = 98.3 / TILE_SPAN_X;
 
-  const ROT_SPEED_TOP   =  -0.0009;
-  const ROT_SPEED_LEFT  =  0.0011;
-  const ROT_SPEED_RIGHT =  -0.0007;
+  const ROT_SPEED_TOP = 0.0009;
+  const ROT_SPEED_LEFT = 0.0011;
+  const ROT_SPEED_RIGHT = 0.0007;
 
   let imgTop, imgLeft, imgRight;
   let bufTop, bufLeft, bufRight;
   let angleTop = 0, angleLeft = 0, angleRight = 0;
 
-  // ── Inertial steering variables ──
+  // Inertial steering
   let vx = 1.2, vy = 0.8;
-  let scrollX = 0.0, scrollY = 0.0;
-
+  let scrollX = 0, scrollY = 0;
   const FORCE_GAIN = 0.12;
-  const DAMPING = 1;
-  const MAX_SPEED = 2.0;
-
+  const DAMPING = 1.0;
+  const MAX_SPEED = 8.0;
   let frozen = false;
 
+  // Helper functions (unchanged)
   function isInteractiveElement(el) {
     if (!el) return false;
     return el.closest('a, button, .sq, .search-sq, .search-input, .mob-sq, .thread-tag, .post-link, .lightbox-overlay, .about-overlay, .search-result') !== null;
   }
-
   function isOverControlZone(e) {
     const target = e.target;
     const headerOrSidebar = target.closest('.site-header, .sidebar');
     if (!headerOrSidebar) return false;
     return !isInteractiveElement(target);
   }
-
   function isOverStream(e) {
     return e.target.closest('.stream') !== null;
   }
 
   p.preload = function() {
-    imgTop   = p.loadImage('Image1.png');
-    imgLeft  = p.loadImage('Image2.png');
+    imgTop = p.loadImage('Image1.png');
+    imgLeft = p.loadImage('Image2.png');
     imgRight = p.loadImage('Image3.png');
   };
 
+  // Resize canvas and apply CSS transform to counter visual viewport offset
+  function resizeAndReposition() {
+    if (!window.visualViewport) return;
+    const w = window.visualViewport.width;
+    const h = window.visualViewport.height;
+    p.resizeCanvas(w, h);
+    // Recreate buffers at new size
+    if (bufTop) bufTop.remove();
+    if (bufLeft) bufLeft.remove();
+    if (bufRight) bufRight.remove();
+    bufTop = p.createGraphics(w, h);
+    bufLeft = p.createGraphics(w, h);
+    bufRight = p.createGraphics(w, h);
+    // Apply CSS transform to counter the visual viewport offset
+    const offsetX = window.visualViewport.pageLeft;
+    const offsetY = window.visualViewport.pageTop;
+    const canvasEl = document.getElementById('animation-canvas');
+    canvasEl.style.transform = `translate(-${offsetX}px, -${offsetY}px)`;
+  }
+
   p.setup = function() {
+    // Initial canvas setup
     let cnv = p.createCanvas(window.innerWidth, window.innerHeight);
     cnv.parent('animation-canvas');
     cnv.style('display', 'block');
-    bufTop   = p.createGraphics(p.width, p.height);
-    bufLeft  = p.createGraphics(p.width, p.height);
-    bufRight = p.createGraphics(p.width, p.height);
+    cnv.style('position', 'fixed');
+    cnv.style('top', '0');
+    cnv.style('left', '0');
+    cnv.style('width', '100%');
+    cnv.style('height', '100%');
+    cnv.style('z-index', '0');
+    cnv.style('pointer-events', 'none');
     p.frameRate(30);
 
+    // Initial resize and reposition
+    if (window.visualViewport) {
+      resizeAndReposition();
+      // Listen to both resize and scroll events (zoom triggers both)
+      window.visualViewport.addEventListener('resize', () => {
+        resizeAndReposition();
+      });
+      window.visualViewport.addEventListener('scroll', () => {
+        // Update transform only (canvas size already correct)
+        const offsetX = window.visualViewport.pageLeft;
+        const offsetY = window.visualViewport.pageTop;
+        const canvasEl = document.getElementById('animation-canvas');
+        canvasEl.style.transform = `translate(-${offsetX}px, -${offsetY}px)`;
+      });
+    }
+
+    // Event listeners for steering and freeze (same as before)
     let holdTimer = null;
 
-    // Mouse move → apply force
     document.addEventListener('mousemove', function(e) {
       if (frozen) return;
       if (isOverStream(e)) return;
       if (!isOverControlZone(e)) return;
-
       const dx = e.movementX;
       const dy = e.movementY;
-      const speed = Math.sqrt(dx*dx + dy*dy);
+      const speed = Math.hypot(dx, dy);
       if (speed < 0.5) return;
       const nx = dx / speed;
       const ny = dy / speed;
       let forceMag = Math.min(speed, 25) * FORCE_GAIN;
       vx += nx * forceMag;
       vy += ny * forceMag;
-      let spd = Math.sqrt(vx*vx + vy*vy);
+      let spd = Math.hypot(vx, vy);
       if (spd > MAX_SPEED) {
         vx = (vx / spd) * MAX_SPEED;
         vy = (vy / spd) * MAX_SPEED;
       }
     });
 
-    // Click-and-hold freeze only on header/sidebar background
     document.addEventListener('mousedown', function(e) {
       if (isOverStream(e)) return;
       if (!isOverControlZone(e)) return;
@@ -972,7 +1008,6 @@ new p5(function(p) {
       frozen = false;
     });
 
-    // Touch support (same logic)
     let lastTouchX = 0, lastTouchY = 0;
     document.addEventListener('touchstart', function(e) {
       if (isOverStream(e)) return;
@@ -990,14 +1025,14 @@ new p5(function(p) {
       const dy = touch.clientY - lastTouchY;
       lastTouchX = touch.clientX;
       lastTouchY = touch.clientY;
-      const speed = Math.sqrt(dx*dx + dy*dy);
+      const speed = Math.hypot(dx, dy);
       if (speed < 0.5) return;
       const nx = dx / speed;
       const ny = dy / speed;
       let forceMag = Math.min(speed, 25) * FORCE_GAIN;
       vx += nx * forceMag;
       vy += ny * forceMag;
-      let spd = Math.sqrt(vx*vx + vy*vy);
+      let spd = Math.hypot(vx, vy);
       if (spd > MAX_SPEED) {
         vx = (vx / spd) * MAX_SPEED;
         vy = (vy / spd) * MAX_SPEED;
@@ -1010,31 +1045,32 @@ new p5(function(p) {
   };
 
   p.windowResized = function() {
-    p.resizeCanvas(window.innerWidth, window.innerHeight);
-    bufTop.remove(); bufLeft.remove(); bufRight.remove();
-    bufTop   = p.createGraphics(p.width, p.height);
-    bufLeft  = p.createGraphics(p.width, p.height);
-    bufRight = p.createGraphics(p.width, p.height);
+    // Fallback for orientation change
+    if (window.visualViewport) {
+      resizeAndReposition();
+    } else {
+      p.resizeCanvas(window.innerWidth, window.innerHeight);
+    }
   };
 
   function updateBuffer(buf, img, angle) {
     buf.clear();
     buf.push();
-    buf.translate(buf.width / 2, buf.height / 2);
+    buf.translate(buf.width/2, buf.height/2);
     buf.rotate(angle);
-    const imgSize = Math.sqrt(buf.width * buf.width + buf.height * buf.height) * 1.2;
+    const imgSize = Math.hypot(buf.width, buf.height) * 1.2;
     buf.imageMode(p.CENTER);
     buf.image(img, 0, 0, imgSize, imgSize);
     buf.pop();
   }
 
   function drawFace(facePoints, buf, tx, ty) {
-    const pts = facePoints.map(pt => [tx + pt[0] * sc, ty + pt[1] * sc]);
+    const pts = facePoints.map(pt => [tx + pt[0]*sc, ty + pt[1]*sc]);
     const ctx = p.drawingContext;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    for (let i=1; i<pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.closePath();
     ctx.clip();
     p.push();
@@ -1043,7 +1079,7 @@ new p5(function(p) {
     p.pop();
     ctx.restore();
     p.noFill();
-    p.stroke(141, 77, 145);
+    p.stroke(141,77,145);
     p.strokeWeight(1.5);
     p.beginShape();
     pts.forEach(pt => p.vertex(pt[0], pt[1]));
@@ -1051,30 +1087,28 @@ new p5(function(p) {
   }
 
   function drawCube(tx, ty) {
-    drawFace(FACE_TOP,   bufTop,   tx, ty);
+    drawFace(FACE_TOP, bufTop, tx, ty);
     drawFace(FACE_RIGHT, bufRight, tx, ty);
-    drawFace(FACE_LEFT,  bufLeft,  tx, ty);
+    drawFace(FACE_LEFT, bufLeft, tx, ty);
   }
 
   p.draw = function() {
-    p.background(21, 24, 41);
+    p.background(21,24,41);
 
     if (!frozen) {
-      angleTop   += ROT_SPEED_TOP;
-      angleLeft  += ROT_SPEED_LEFT;
+      angleTop += ROT_SPEED_TOP;
+      angleLeft += ROT_SPEED_LEFT;
       angleRight += ROT_SPEED_RIGHT;
-
       vx *= DAMPING;
       vy *= DAMPING;
       scrollX += vx;
       scrollY += vy;
     }
 
-    updateBuffer(bufTop,   imgTop,   angleTop);
-    updateBuffer(bufLeft,  imgLeft,  angleLeft);
+    updateBuffer(bufTop, imgTop, angleTop);
+    updateBuffer(bufLeft, imgLeft, angleLeft);
     updateBuffer(bufRight, imgRight, angleRight);
 
-    // ── CRITICAL: apply scaling to grid steps (same as original) ──
     const colDX = HORIZ_DX * sc;
     const colDY = HORIZ_DY * sc;
     const rowDY = VERT_DY * sc;
@@ -1086,21 +1120,23 @@ new p5(function(p) {
 
     const colForX = (sx) => (sx - originX) / colDX;
     let colMin = Math.floor(Math.min(colForX(0), colForX(w))) - 2;
-    let colMax = Math.ceil(Math.max(colForX(0), colForX(w)))  + 2;
+    let colMax = Math.ceil(Math.max(colForX(0), colForX(w))) + 2;
 
     for (let col = colMin; col <= colMax; col++) {
       const baseY = originY + col * colDY;
       const rowForY = (sy) => (sy - baseY) / rowDY;
       let rowMin = Math.floor(Math.min(rowForY(0), rowForY(h))) - 2;
-      let rowMax = Math.ceil(Math.max(rowForY(0), rowForY(h)))  + 2;
+      let rowMax = Math.ceil(Math.max(rowForY(0), rowForY(h))) + 2;
 
       for (let row = rowMin; row <= rowMax; row++) {
         const tileX = originX + col * colDX;
-        const tileY = baseY   + row * rowDY;
+        const tileY = baseY + row * rowDY;
         drawCube(tileX, tileY);
       }
     }
   };
+
+}, document.getElementById('animation-canvas'));
 
 }, document.getElementById('animation-canvas'));
 </script>
